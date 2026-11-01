@@ -442,6 +442,18 @@ class TestEdgeModifierBuilding:
         assert dag.get_edge_info(op1.task_id, op3.task_id) == {"label": "Group label"}
         assert dag.get_edge_info(op3.task_id, op4.task_id) == {}
 
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_task_in_taskgroup_shift(self, test_taskgroup_dag, reverse):
+        """A label on an edge from a single task in a TaskGroup only links that task"""
+        dag, group, (op1, op2, op3, op4) = test_taskgroup_dag
+        if reverse:
+            op4 << Label("Label") << op2
+        else:
+            op2 >> Label("Label") >> op4
+        assert op4.upstream_task_ids == {op2.task_id}
+        assert op3.downstream_task_ids == set()
+        assert dag.get_edge_info(op2.task_id, op4.task_id) == {"label": "Label"}
+
     def test_simple_dag(self, test_taskgroup_dag, simple_dag_expected_edges):
         """Tests the simple dag with a TaskGroup and a Label"""
         dag, group, (op1, op2, op3, op4) = test_taskgroup_dag

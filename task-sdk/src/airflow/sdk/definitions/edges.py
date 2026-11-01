@@ -23,6 +23,7 @@ from airflow.sdk.definitions._internal.mixins import DependencyMixin
 
 if TYPE_CHECKING:
     from airflow.sdk.definitions.dag import DAG
+    from airflow.sdk.definitions.taskgroup import TaskGroup
 
 
 class EdgeModifier(DependencyMixin):
@@ -114,15 +115,26 @@ class EdgeModifier(DependencyMixin):
 
         # If all nodes originate from the same TaskGroup, we will not convert them
         if len(group_ids) != 1:
-            self._upstream = self._convert_stream_to_task_groups(self._upstream)
-            self._downstream = self._convert_stream_to_task_groups(self._downstream)
+            self._upstream = self._convert_stream_to_task_groups(self._upstream, upstream=True)
+            self._downstream = self._convert_stream_to_task_groups(self._downstream, upstream=False)
 
-    def _convert_stream_to_task_groups(self, stream: Sequence[DependencyMixin]) -> Sequence[DependencyMixin]:
+    def _convert_stream_to_task_groups(
+        self, stream: Sequence[DependencyMixin], upstream: bool
+    ) -> Sequence[DependencyMixin]:
         from airflow.sdk.definitions._internal.node import DAGNode
+
+        def covers_group(group: TaskGroup) -> bool:
+            # Only fold tasks back into their group when the stream holds all of the group's
+            # leaves (upstream) or roots (downstream), not when a single task was used.
+            edge_tasks = group.get_leaves() if upstream else group.get_roots()
+            return all(task in stream for task in edge_tasks)
 
         return [
             node.task_group
-            if isinstance(node, DAGNode) and node.task_group and not node.task_group.is_root
+            if isinstance(node, DAGNode)
+            and node.task_group
+            and not node.task_group.is_root
+            and covers_group(node.task_group)
             else node
             for node in stream
         ]
